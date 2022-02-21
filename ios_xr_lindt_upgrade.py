@@ -11,6 +11,8 @@ import subprocess
 import pysftp as sftp
 import threading
 
+#Author: Andre Pedro
+
 
 def check_if_upgrade_is_require(con,filename_no_iso):
     check_sh_ver = con.send_command(f'show ver | inc Label')
