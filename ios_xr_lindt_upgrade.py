@@ -1,17 +1,30 @@
+from datetime import datetime
+start_time = datetime.now()
 import os
 import paramiko
 from netmiko import ConnectHandler
+from netmiko.ssh_exception import NetMikoTimeoutException
 import logging
 import time
 from time import sleep, perf_counter
 from threading import Thread
 import os.path
 import hashlib
-import subprocess
 import pysftp as sftp
-import threading
+import subprocess
 
 #Author: Andre Pedro
+
+def check_if_file_already_exists(con, filename, host):
+    check_file = con.send_command(f'run ls -lsrt /misc/disk1/{filename}').split()
+    filter_output = check_file[-1]
+    remove_unwanted = filter_output.strip('/misc/disk1')
+    if remove_unwanted == filename:
+        print(f'file found in {host}, {filename }')
+        return False
+    else:
+        print(f'file not found in {host} {filename}')
+        return True
 
 
 def check_if_upgrade_is_require(con,filename_no_iso):
@@ -32,7 +45,6 @@ def check_rw_file(con,filename):
     if 'rw' not in filter_rw:
         print('File is not writtable')
         exit(4)
-
 
 
 def giso_error_handling(con,filename,localpath):
@@ -71,6 +83,7 @@ def check_disk_space(host,filename,con):
         print(f'Not enough disk space, currently on /misc/disk1/ {disk_space_percentage}% utilized, copy of {filename} to {host} will fail, aborting') 
         exit(5)    
         #need to check how to skip failed host only and move on
+
 
 def push_file_to_routers(host,localpath,filename):
     cnopts = sftp.CnOpts()
@@ -118,7 +131,7 @@ def upgrade_devices(host,con,filename):
     time.sleep(30)
     cli_commit = con.send_command(f'install commit')
     print(f'Commiting software, {cli_commit}')
-    time.sleep(60)
+    time.sleep(30)
     cli = con.send_command(f'install replace /harddisk:/{filename} noprompt commit reload', expect_string=r"#")
     print(cli)
 
@@ -141,7 +154,6 @@ def main():
             if remote_device_check(host):
                 control_the_while_loop = True
                 time.sleep(1)
-            # /home/lab/anpedro-rtp/fb/8000-goldenk9-x64-7.3.4.11I-facebook_anpedro_73411i_02_17_2022.iso
 
         device = {
 
@@ -150,20 +162,31 @@ def main():
             'username': 'cisco',
             'password': 'lab123',
             'timeout': 120,
-            'global_delay_factor': 5
+            'global_delay_factor': 10
                 }
-    
-        con = ConnectHandler(**device)
+        connection_attempts = 0
+        while connection_attempts < 100:
+            time.sleep(0.5)
+            try:
+                con = ConnectHandler(**device)
+            except NetMikoTimeoutException:
+                print(f'device is not reachable via ssh, Attempting connection {connection_attempts}')
+            else:
+                break
 
-        check_disk_space(host,filename,con)    
+            connection_attempts = connection_attempts + 1
+
+        check_disk_space(host,filename,con)   
+        file_exists = check_if_file_already_exists(con, filename, host)
         upgrade_required = check_if_upgrade_is_require(con,filename_no_iso)
 
-
+        if file_exists :
+            push_file_to_routers(host,localpath,filename)
+ 
         if upgrade_required :
 
-
-            print(f'Upgrading to, {filename_no_iso} ')
-            push_file_to_routers(host,localpath,filename)
+#            print(f'Upgrading to, {filename_no_iso} ')
+#            push_file_to_routers(host,localpath,filename)
             giso_error_handling(con,filename,localpath)        
             check_rw_file(con,filename)
             upgrade_devices(host,con,filename)
@@ -178,7 +201,7 @@ def main():
         while control_the_while_loop == False :
             if remote_device_check(x):
                 control_the_while_loop = True
-                time.sleep(1)
+                time.sleep(5)
 
 
         device = {
@@ -189,10 +212,31 @@ def main():
             'timeout': 120,
             'global_delay_factor': 5
         }
-        con = ConnectHandler(**device)
-        remote_device_image_verify(con,filename_no_iso)
-#    exit()
+
+        connection_attempts = 0
+        while connection_attempts < 100:
+            time.sleep(0.5)
+            try:
+                con = ConnectHandler(**device)
+            except NetMikoTimeoutException:
+                print(f'device is not reachable via ssh, Attempting connection {connection_attempts}')
+            else:
+                remote_device_image_verify(con,filename_no_iso)
+                break
+            connection_attempts = connection_attempts + 1
 
 
 if __name__ == '__main__':
     main()
+
+end_time = datetime.now()
+delta_time = end_time - start_time
+
+
+print()
+print(f"---------------------------------------------------------")
+print(f"#DEBUG: start_time = {start_time}")
+print(f"#DEBUG:   end_time = {end_time}")
+print(f"#DEBUG:  exec_time = {delta_time.days} days, {delta_time.seconds // 3600} hours, {delta_time.seconds // 60 % 60} mins, {delta_time.seconds % 60} secs")
+print(f"---------------------------------------------------------")
+print()
