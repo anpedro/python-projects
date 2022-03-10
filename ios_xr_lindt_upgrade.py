@@ -1,9 +1,7 @@
 from datetime import datetime
-start_time = datetime.now()
 import os
-import paramiko
 from netmiko import ConnectHandler
-from netmiko.ssh_exception import NetMikoTimeoutException
+import paramiko
 import logging
 import time
 from time import sleep, perf_counter
@@ -12,31 +10,116 @@ import os.path
 import hashlib
 import pysftp as sftp
 import subprocess
+import threading
+import traceback
 
 #Author: Andre Pedro
+
+def host_handler(host,filename,filename_no_iso,localpath):
+    device = {
+        'device_type': 'cisco_xr',
+        'ip': host,
+        'username': 'cisco',
+        'password': 'lab123',
+        'timeout': 120,
+        'global_delay_factor': 10
+        }
+    connection_attempts = 0
+    while connection_attempts < 100:
+        time.sleep(0.5) 
+        try:
+            con = ConnectHandler(**device)
+        except Exception as e:
+            #print(f'Attempting to connect {connection_attempts} error is {e}')
+            print(f'Attempting to connect {connection_attempts}')
+            
+        else:
+            break
+        connection_attempts = connection_attempts + 1
+
+    
+    check_disk_space(host,filename,con)
+    file_exists = check_if_file_already_exists(con, filename, host)
+    upgrade_required = check_if_upgrade_is_require(con,filename_no_iso,host)
+    if file_exists : #True means file needs to copied to the router and upgrade will happen #
+        push_file_to_routers(host,localpath,filename)
+    
+    if upgrade_required : #True means upgrade is required 
+        giso_error_handling(con,filename,localpath)        
+        check_rw_file(con,filename)
+        upgrade_devices(host,con,filename)
+    
+    
+    ### check if device is still reachable up 
+    control_the_while_loop = False
+    while control_the_while_loop == False :
+        if remote_device_check(host):
+            control_the_while_loop = True
+            time.sleep(5)
+
+
+    connection_attempts = 0
+    while connection_attempts < 100:
+        time.sleep(0.5)
+        try:
+            con = ConnectHandler(**device)
+        except Exception as e:
+            #print(e)
+            print(f'Attempting to connect {connection_attempts}')
+
+        else:
+            check_if_install_still_running(device,filename_no_iso,host)
+            break
+        connection_attempts = connection_attempts + 1
+
+      
+def check_if_install_still_running(device,filename_no_iso,host):
+    control = False
+    connection_attempts = 0
+    while control == False:
+        check_install_filtered = ''
+
+        try:
+            con = ConnectHandler(**device)
+        except Exception as e:
+            #print(e)
+            print(f'Attempting to connect {connection_attempts}')
+
+        else:
+            check_install = con.send_command(f'show install request  | inc State:').split(':')
+            check_install_filtered = check_install[1]
+        if "Success since" in check_install_filtered:
+            remote_device_image_verify(con,filename_no_iso,host) #check this #
+            control = True
+        else:
+            time.sleep(30)
+            connection_attempts = connection_attempts + 1
+            print(f'Upgrade still in progress ...{host}....attempt {connection_attempts}')
+      
+#
 
 def check_if_file_already_exists(con, filename, host):
     check_file = con.send_command(f'run ls -lsrt /misc/disk1/{filename}').split()
     filter_output = check_file[-1]
     remove_unwanted = filter_output.strip('/misc/disk1')
     if remove_unwanted == filename:
-        print(f'file found in {host}, {filename }')
+        print(f'file {filename } found in {host} ')
         return False
     else:
-        print(f'file not found in {host} {filename}')
+        print(f'file {filename } not found in {host} ')
         return True
 
 
-def check_if_upgrade_is_require(con,filename_no_iso):
+def check_if_upgrade_is_require(con,filename_no_iso,host):
     check_sh_ver = con.send_command(f'show ver | inc Label')
     split_sh_ver = check_sh_ver.split(':')
     final_output = split_sh_ver[1]
 
     if filename_no_iso not in final_output:
-        print(f'Upgrade required, upgrading to {filename_no_iso}')
+        print(f'Upgrade required, upgrading to {filename_no_iso} in {host}')
         return True
     else: 
-        print(f'Upgrade not required')
+        print(f'Upgrade not required in {host}')
         return False
 
 def check_rw_file(con,filename):
@@ -75,14 +158,15 @@ def giso_error_handling(con,filename,localpath):
 
 
 def check_disk_space(host,filename,con):
-    # Check disk space:
     check_diskspace = con.send_command(f'run df /misc/disk1/')
     disk_space_split = check_diskspace.split(" ")
     disk_space_percentage = int(disk_space_split[-2].strip('%'))
     if disk_space_percentage > 90:
-        print(f'Not enough disk space, currently on /misc/disk1/ {disk_space_percentage}% utilized, copy of {filename} to {host} will fail, aborting') 
-        exit(5)    
-        #need to check how to skip failed host only and move on
+        print(f'Not enough disk space, currently on /misc/disk1/ {disk_space_percentage}% utilized, deleting .iso & core.gz files older than 10 days') 
+        list_old_files = con.send_command(f'run find /misc/disk1 -type f -mtime -10 \\( -name "*.core.gz" -o -name "*.core.txt" -o -name "*.iso" \\) {host}')
+        print(f' The following files will be deleted to free up disk space {list_old_files} & {host}')
+        find_old_files = con.send_command(f'run find /misc/disk1 -type f -mtime -10 \\( -name "*.core.gz" -o -name "*.core.txt" -o -name "*.iso" \\) -delete at {host}')
+        print(find_old_files) 
 
 
 def push_file_to_routers(host,localpath,filename):
@@ -108,135 +192,63 @@ def remote_device_check(host):
         print(f'host is reachable, {host}')
         return True
 
-def remote_device_image_verify(con,filename_no_iso):
+def remote_device_image_verify(con,filename_no_iso,host):
     check_sh_ver = con.send_command(f'show ver | inc Label')
     split_sh_ver = check_sh_ver.split(':')
     final_output = split_sh_ver[1]
     if filename_no_iso in final_output:
-        print(f'Upgrade succesfully {filename_no_iso} ')
+        print(f'Upgrade succesfully {filename_no_iso} at {host} ')
     else:
-        print(f'Upgrade failed {final_output} is not the same as {filename_no_iso} ')
+        print(f'Upgrade failed {final_output} is not the same as {filename_no_iso} at {host} ')
         pass
 #        exit(6)
 
 
 def upgrade_devices(host,con,filename):
     formatting = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    logger = logging.basicConfig(format=formatting, level=logging.INFO)
-    log = logging.getLogger('Golden ISO copy and Install')
-    hostname = con.find_prompt().split(':')[-1]
-    log.info(f'Connected to {hostname}')
+    #logger = logging.basicConfig(format=formatting, level=logging.INFO)
+    #log = logging.getLogger('Golden ISO copy and Install')
+    #hostname = con.find_prompt().split(':')[-1]
+    #log.info(f'Connected to {hostname}')
     cli_clear_config = con.send_command(f'clear configuration inconsistency')
-    print(f'clearing configuration inconsistency , {cli_clear_config}')
+    print(f'clearing configuration inconsistency  {cli_clear_config} at {host}')
     time.sleep(30)
+    cli_clear_install_previous = con.send_command(f'install package abort latest')
+    print(f'Aborting latest install operation{cli_clear_install_previous} at {host}')
+    time.sleep(180)
     cli_commit = con.send_command(f'install commit')
-    print(f'Commiting software, {cli_commit}')
+    print(f'Commiting software, {cli_commit} at {host}')
     time.sleep(30)
     cli = con.send_command(f'install replace /harddisk:/{filename} noprompt commit reload', expect_string=r"#")
-    print(cli)
+    print(f' {cli} at {host}')
 
 
 def main():
-    formatting = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    logger = logging.basicConfig(format=formatting, level=logging.INFO)
-    log = logging.getLogger('Golden ISO copy and Install')
+    #formatting = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    #logger = logging.basicConfig(format=formatting, level=logging.INFO)
+    #log = logging.getLogger('Golden ISO copy and Install')
     
-    list_of_hosts = ['10.8.70.12','10.8.70.13','10.8.70.14', '10.8.70.15', '10.8.70.16', '10.8.70.22', '10.8.70.23']
-    #list_of_hosts = ['10.8.70.15']
+    #list_of_hosts = ['10.8.70.11','10.8.70.12','10.8.70.13','10.8.70.14', '10.8.70.15', '10.8.70.16', '10.8.70.22', '10.8.70.23']
+    #list_of_hosts = ['10.8.70.12', '10.8.70.13', '10.8.70.14', '10.8.70.22']
+    list_of_hosts = ['10.8.70.14']
     localpath = input(f'Enter Local Path along with file name: ')
     split_string = localpath.split("/")
     filename = split_string[-1]
     filename_no_iso = filename.strip('8000-goldenk9-x64- .iso')
     
+    thread_list = []
     for host in list_of_hosts:
-        control_the_while_loop = False
-        while control_the_while_loop == False :
-            if remote_device_check(host):
-                control_the_while_loop = True
-                time.sleep(1)
-
-        device = {
-
-            'device_type': 'cisco_xr',
-            'ip': host,
-            'username': 'cisco',
-            'password': 'lab123',
-            'timeout': 120,
-            'global_delay_factor': 10
-                }
-        connection_attempts = 0
-        while connection_attempts < 100:
-            time.sleep(0.5)
-            try:
-                con = ConnectHandler(**device)
-            except NetMikoTimeoutException:
-                print(f'device is not reachable via ssh, Attempting connection {connection_attempts}')
-            else:
-                break
-
-            connection_attempts = connection_attempts + 1
-
-        check_disk_space(host,filename,con)   
-        file_exists = check_if_file_already_exists(con, filename, host)
-        upgrade_required = check_if_upgrade_is_require(con,filename_no_iso)
-
-        if file_exists :
-            push_file_to_routers(host,localpath,filename)
- 
-        if upgrade_required :
-
-#            print(f'Upgrading to, {filename_no_iso} ')
-#            push_file_to_routers(host,localpath,filename)
-            giso_error_handling(con,filename,localpath)        
-            check_rw_file(con,filename)
-            upgrade_devices(host,con,filename)
-
-        #t1 = threading.Thread(target=push_file_to_routers(host,localpath,filename))
-        #t2 = threading.Thread(target=push_file_to_routers(host,localpath,filename))
-        #t1.start()
-        #t2.start()
-
-    for x in list_of_hosts:
-        control_the_while_loop = False
-        while control_the_while_loop == False :
-            if remote_device_check(x):
-                control_the_while_loop = True
-                time.sleep(5)
-
-
-        device = {
-            'device_type': 'cisco_xr',
-            'ip': x,
-            'username': 'cisco',
-            'password': 'lab123',
-            'timeout': 120,
-            'global_delay_factor': 5
-        }
-
-        connection_attempts = 0
-        while connection_attempts < 100:
-            time.sleep(0.5)
-            try:
-                con = ConnectHandler(**device)
-            except NetMikoTimeoutException:
-                print(f'device is not reachable via ssh, Attempting connection {connection_attempts}')
-            else:
-                remote_device_image_verify(con,filename_no_iso)
-                break
-            connection_attempts = connection_attempts + 1
-
+        t1 = threading.Thread(target=host_handler, args=(host,filename,filename_no_iso,localpath,))
+        thread_list.append(t1)
+        print()
+    
+    for t in thread_list:
+        t.start()
+    
+    for t in thread_list:
+        t.join()
+    
+        
 
 if __name__ == '__main__':
     main()
-
-end_time = datetime.now()
-delta_time = end_time - start_time
-
-
-print()
-print(f"---------------------------------------------------------")
-print(f"#DEBUG: start_time = {start_time}")
-print(f"#DEBUG:   end_time = {end_time}")
-print(f"#DEBUG:  exec_time = {delta_time.days} days, {delta_time.seconds // 3600} hours, {delta_time.seconds // 60 % 60} mins, {delta_time.seconds % 60} secs")
-print(f"---------------------------------------------------------")
-print()
