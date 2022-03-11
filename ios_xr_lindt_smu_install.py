@@ -1,5 +1,6 @@
 from datetime import datetime
 import os
+from re import L
 from netmiko import ConnectHandler
 import logging
 import time
@@ -67,6 +68,13 @@ def check_file_md5(filename,con,just_filename):
     else:
         print(f'MD5 check OK')
 
+def install_commit_prior(con):
+    clear_config_inconsistency = con.send_command(f'clear configuration inconsistency')
+    install_commit_prior_cli = con.send_command(f'install commit')
+    print(f'commiting prior software before new smu install,{install_commit_prior_cli } ')
+    print(f'clearing config inconsistency ,{clear_config_inconsistency } ')
+    
+    time.sleep(15)
 
 def install_add(con,just_filename):
     install_add_cli = con.send_command(f'install package add source /misc/disk1/install_repo/{just_filename}')
@@ -75,10 +83,14 @@ def install_add(con,just_filename):
         check_complete_string = con.send_command(f'show install request | inc Current').split(':')
         check_complete_string_sliced = check_complete_string[-1]
         print(f'Current status: {check_complete_string_sliced}')
-
         if 'Await' in check_complete_string_sliced:
             break
-        else:
+        elif 'Abort' in check_complete_string_sliced:
+            print(f'Install of {just_filename} failed, check below reason:')
+            abort_history = con.send_command(f'show install history last package verbose errors location 0/rp0/CPU0')
+            print(abort_history)
+            exit(10)
+        else: 
             print(f'Install still running')
 
 def install_apply(con):
@@ -135,6 +147,7 @@ def main():
     split_filename = filename.split("/")
     just_filename = split_filename[-1]
 
+    install_commit_prior(con)
     check_input_file(filename)
     push_file_to_routers(ip,filename,just_filename)
     check_file_md5(filename,con,just_filename)
