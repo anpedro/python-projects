@@ -1,3 +1,4 @@
+from audioop import add
 from datetime import datetime
 import os
 from netmiko import ConnectHandler
@@ -14,6 +15,7 @@ import threading
 import traceback
 
 #Author: Andre Pedro
+
 
 def host_handler(host,filename,filename_no_iso,localpath):
     device = {
@@ -37,7 +39,7 @@ def host_handler(host,filename,filename_no_iso,localpath):
             break
         connection_attempts = connection_attempts + 1
 
-    
+    pre_configure(host,con)
     check_disk_space(host,filename,con)
     file_exists = check_if_file_already_exists(con, filename, host)
     upgrade_required = check_if_upgrade_is_require(con,filename_no_iso,host)
@@ -45,7 +47,7 @@ def host_handler(host,filename,filename_no_iso,localpath):
         push_file_to_routers(host,localpath,filename)
     
     if upgrade_required : #True means upgrade is required 
-        giso_error_handling(con,filename,localpath)        
+        giso_error_handling(con,filename,localpath,host)        
         check_rw_file(con,filename)
         upgrade_devices(host,con,filename)
     
@@ -130,7 +132,8 @@ def check_rw_file(con,filename):
         exit(4)
 
 
-def giso_error_handling(con,filename,localpath):
+def giso_error_handling(con,filename,localpath,host):
+    """This function will perform bunch of GISO handling"""
     #check if the file exists
     if not os.path.exists(localpath):
         print(f'File does not exist, {localpath}')
@@ -138,13 +141,16 @@ def giso_error_handling(con,filename,localpath):
     #check the md5 from local and remote
     with open(localpath, "rb") as f:
         bytes = f.read()
-        readable_hash = hashlib.md5(bytes).hexdigest()    
+        readable_hash = hashlib.md5(bytes).hexdigest()
     check_md5 = con.send_command(f'run md5sum /misc/disk1/{filename}')
     split_md5_string = check_md5.split()
     md5_remote = split_md5_string[0]
+    print(f"Local MD5 is {readable_hash} / remote MD5 is  {md5_remote}")
     if readable_hash != md5_remote:
-        print(f'MD5 does not match, {filename}')
-        exit(2)
+        delete_remote_iso = con.send_command(f'run rm -rf /misc/disk1/{filename}')
+        print(f'MD5 does not match,host {host}, filename {filename}, deleting remote file and resending {delete_remote_iso}')
+        push_file_to_routers(host,localpath,filename)
+
     #check if the local file is an iso:
     cmd = f"file {localpath}"
     cmd_list = cmd.split() #change string to list so the subprocess popen works.. it takes a list as argument
@@ -163,9 +169,11 @@ def check_disk_space(host,filename,con):
     disk_space_percentage = int(disk_space_split[-2].strip('%'))
     if disk_space_percentage > 90:
         print(f'Not enough disk space, currently on /misc/disk1/ {disk_space_percentage}% utilized, deleting .iso & core.gz files older than 10 days') 
-        list_old_files = con.send_command(f'run find /misc/disk1 -type f -mtime -10 \\( -name "*.core.gz" -o -name "*.core.txt" -o -name "*.iso" \\) {host}')
+        cmd = f'run find /misc/disk1 -type f -mtime -10 \\( -name "*.core.gz" -o -name "*.core.txt" -o -name "*.iso" \\)'
+        list_old_files = con.send_command(cmd)
         print(f' The following files will be deleted to free up disk space {list_old_files} & {host}')
-        find_old_files = con.send_command(f'run find /misc/disk1 -type f -mtime -10 \\( -name "*.core.gz" -o -name "*.core.txt" -o -name "*.iso" \\) -delete at {host}')
+        cmd = f'run find /misc/disk1 -type f -mtime -10 \\( -name "*.core.gz" -o -name "*.core.txt" -o -name "*.iso" \\) -delete'
+        find_old_files = con.send_command(cmd)
         print(find_old_files) 
 
 
@@ -206,10 +214,6 @@ def remote_device_image_verify(con,filename_no_iso,host):
 
 def upgrade_devices(host,con,filename):
     formatting = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    #logger = logging.basicConfig(format=formatting, level=logging.INFO)
-    #log = logging.getLogger('Golden ISO copy and Install')
-    #hostname = con.find_prompt().split(':')[-1]
-    #log.info(f'Connected to {hostname}')
     cli_clear_config = con.send_command(f'clear configuration inconsistency')
     print(f'clearing configuration inconsistency  {cli_clear_config} at {host}')
     time.sleep(30)
@@ -222,15 +226,23 @@ def upgrade_devices(host,con,filename):
     cli = con.send_command(f'install replace /harddisk:/{filename} noprompt commit reload', expect_string=r"#")
     print(f' {cli} at {host}')
 
+def pre_configure(host,con):
+    configure_list = ['line console timestamp disable','line default timestamp disable']
+    for config in configure_list:
+        con.send_config_set([f'{config}'])
+        con.commit()
+        print(f"Pre configuration added {config} {host}")
+        time.sleep(5)
+        cli = con.send_command(f'end', expect_string=r"#")
+        
 
 def main():
     #formatting = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     #logger = logging.basicConfig(format=formatting, level=logging.INFO)
     #log = logging.getLogger('Golden ISO copy and Install')
     
-    #list_of_hosts = ['10.8.70.11','10.8.70.12','10.8.70.13','10.8.70.14', '10.8.70.15', '10.8.70.16', '10.8.70.22', '10.8.70.23']
-    #list_of_hosts = ['10.8.70.12', '10.8.70.13', '10.8.70.14', '10.8.70.22']
-    list_of_hosts = ['10.8.70.14']
+    list_of_hosts = ['10.8.70.11','10.8.70.12','10.8.70.13','10.8.70.14', '10.8.70.15', '10.8.70.16', '10.8.70.22', '10.8.70.23']
+ 
     localpath = input(f'Enter Local Path along with file name: ')
     split_string = localpath.split("/")
     filename = split_string[-1]
