@@ -237,12 +237,9 @@ def pre_configure(host,con):
         
 
 def main():
-    #formatting = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    #logger = logging.basicConfig(format=formatting, level=logging.INFO)
-    #log = logging.getLogger('Golden ISO copy and Install')
+
     
-    list_of_hosts = ['10.8.70.11','10.8.70.12','10.8.70.13','10.8.70.14', '10.8.70.15', '10.8.70.16', '10.8.70.22', '10.8.70.23']
- 
+    list_of_hosts = ['10.8.70.11','10.8.70.12','10.8.70.13','10.8.70.14', '10.8.70.15', '10.8.70.16', '10.8.70.22', '10.8.70.23'] 
     localpath = input(f'Enter Local Path along with file name: ')
     split_string = localpath.split("/")
     filename = split_string[-1]
