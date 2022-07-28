@@ -102,12 +102,7 @@ def main():
             print(f'There are no RPLs configured')
             exit(1)
 
-            """Here I am comparing the size of the list after collecting the BGP CLI:
-            neighbor_group_name = [['MSWv4'], ['MSWv6'], ['PSWv4'], ['PSWv6'], ['SLBv4'], ['SLBv6'], ['mSLBv6'], ['INTERNETv4'], ['INTERNETv6']]
-            rpl_names = [['MSW-INv4', 'in'], ['MSW-OUTv4', 'out'], ['MSW-INv6', 'in'], ['MSW-OUTv6', 'out'], ['PSW-INv4', 'in'], ['PSW-OUTv4', 'out'], ['PSW-INv6', 'in'], ['PSW-OUTv6', 'out'], ['SLB-INv4', 'in'], ['SLB-OUTv4', 'out'], ['SLB-INv6', 'in'], ['SLB-OUTv6', 'out'], ['SLB-INv6', 'in'], ['SLB-OUTv6', 'out'], ['SLB-INv6', 'in'], ['SLB-OUTv6', 'out'], ['INTERNET-IN', 'in'], ['INTERNET-OUT', 'out'], ['INTERNET-IN', 'in'], ['INTERNET-OUT', 'out']]
-            safi = [['address-family', 'IPv4', 'Unicast'], ['address-family', 'IPv6', 'Unicast'], ['address-family', 'IPv4', 'Unicast'], ['address-family', 'IPv6', 'Unicast'], ['address-family', 'IPv4', 'Unicast'], ['address-family', 'IPv6', 'Unicast'], ['address-family', 'IPv4', 'Unicast'], ['address-family', 'IPv6', 'Unicast'], ['address-family', 'IPv4', 'Unicast'], ['address-family', 'IPv6', 'Unicast']]
-                        
-            """
+         
            if len(neighbor_group_rpl_safi) == 1:
             neighbor_group = neighbor_group_rpl_safi
             neighbor_group_names.append(neighbor_group)
