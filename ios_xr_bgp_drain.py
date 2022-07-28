@@ -84,7 +84,7 @@ def main():
     def check_configured_rpl(con):
         """Checking what is the configured RPL in the neighbor groups"""    
         command = con.send_command(f"show bgp neighbor-group all configuration  | inc \"neighbor-group|address-family|policy\" | ex \"default-originate\"")
-        command_1 = con.send_command(f"show bgp summary  | inc number").split()[-1]
+        command_1 = con.send_command(f"show bgp ipv6 unicast  summary | inc number").split()[-1]
         as_number = command_1
 
         output_lines = command.split('\n')
@@ -96,14 +96,12 @@ def main():
         for line in output_lines:
            match = line.strip('[]').strip('policy').strip().split('neighbor-group')
            neighbor_group_rpl_safi = match[-1].split()
-           print(neighbor_group_rpl_safi)
-
+           
            if len(neighbor_group_rpl_safi) == 0:
             print(f'There are no RPLs configured')
             exit(1)
 
-         
-           if len(neighbor_group_rpl_safi) == 1:
+            if len(neighbor_group_rpl_safi) == 1:
             neighbor_group = neighbor_group_rpl_safi
             neighbor_group_names.append(neighbor_group)
 
@@ -116,9 +114,6 @@ def main():
                 if 'address' in safi_name[0]:
                     safi_names.append(safi_name)
         
-        print(neighbor_group_names)
-        print(rpl_names)
-
         return neighbor_group_names, rpl_names, safi_names, as_number
    
 
@@ -142,9 +137,9 @@ def main():
             con.send_config_set([f'{config_in}'])
             print(config_out)
             con.send_config_set([f'{config_out}'])
-            con.commit()
-            time.sleep(5)
-            cli = con.send_command(f'end', expect_string="#")
+        con.commit()
+        time.sleep(5)
+        cli = con.send_command(f'end', expect_string="#")
         print(f'All current RPLs removed from Neighbors')
 
         return neighbor_group_names_config, safi_v4_v6, safi_type
@@ -165,9 +160,9 @@ def main():
             con.send_config_set([f'{config_in}'])
             print(config_out)
             con.send_config_set([f'{config_out}'])
-            con.commit()
-            time.sleep(5)
-            cli = con.send_command(f'end', expect_string="#")
+        con.commit()
+        time.sleep(5)
+        cli = con.send_command(f'end', expect_string="#")
         print(f'All Neighbors have been DRAINED')
 
     
