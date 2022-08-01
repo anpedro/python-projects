@@ -102,12 +102,12 @@ def main():
             exit(1)
 
             if len(neighbor_group_rpl_safi) == 1:
-            neighbor_group = neighbor_group_rpl_safi
-            neighbor_group_names.append(neighbor_group)
+                neighbor_group = neighbor_group_rpl_safi
+                neighbor_group_names.append(neighbor_group)
 
            if len(neighbor_group_rpl_safi) == 2:
-            rpl_name = neighbor_group_rpl_safi
-            rpl_names.append(rpl_name)
+                rpl_name = neighbor_group_rpl_safi
+                rpl_names.append(rpl_name)
         
            if len(neighbor_group_rpl_safi) == 3:
                 safi_name = neighbor_group_rpl_safi
