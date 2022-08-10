@@ -1,9 +1,31 @@
 from datetime import datetime
+from black import out
 from netmiko import ConnectHandler
 import time
+from threading import Thread
 import os.path
 import subprocess
 import argparse
+from datetime import date
+from difflib import Differ
+
+
+
+def check_drain_rpl(con):
+    """In case DRAIN policy is not configured, configuration will be added"""
+    command = con.send_command(f"show run route-policy DRAIN").split()
+    if 'DRAIN' in command:
+        print(f'DRAIN POLICY is already configured, continuing')
+        return True
+    else:
+        configure_list = ['route-policy DRAIN','drop','end-policy']
+        for config in configure_list:
+            con.send_config_set([f'{config}'])
+            print(f"Configuring DRAIN policy {config}")
+            time.sleep(5)
+        con.commit()
+        cli = con.send_command(f'end', expect_string=r"#") 
+        print(f'DRAIN POLICY has been configured')
 
 
 
@@ -83,11 +105,11 @@ def remove_rpl_configs(con, neighbor_group_names, rpl_names, safi_names, as_numb
 
     """Filtering the required info via list List Comprehension  """
 
-    neighbor_group_names_config = [neighbor[0] for neighbor in neighbor_group_names ] #take the first item in the list and loop though
-    safi_v4_v6 = [safi_name[1] for safi_name in safi_names ] #take the 2nd item in the list and loop though
-    safi_type = [safi_name[2] for safi_name in safi_names] #take the 3rd item in the list and loop though
-    rpl_in_list = [rpl_name[0] for rpl_name in rpl_names if rpl_name[1] == "in"] ##take the first item in the list and loop though
-    rpl_out_list = [rpl_name[0] for rpl_name in rpl_names if rpl_name[1] == "out"] #take the first item in the list and loop though
+    neighbor_group_names_config = [neighbor[0] for neighbor in neighbor_group_names ] #take the first item in the list and loop through
+    safi_v4_v6 = [safi_name[1] for safi_name in safi_names ] #take the 2nd item in the list and loop through
+    safi_type = [safi_name[2] for safi_name in safi_names] #take the 3rd item in the list and loop through
+    rpl_in_list = [rpl_name[0] for rpl_name in rpl_names if rpl_name[1] == "in"] ##take the first item in the list and loop through
+    rpl_out_list = [rpl_name[0] for rpl_name in rpl_names if rpl_name[1] == "out"] #take the first item in the list and loop through
 
     remove_config_list_in = [] # create empty list to add the configs inbound 
     remove_config_list_out = [] # create empty list to add the configs outbound 
@@ -177,13 +199,13 @@ def main():
     
     bgp_before_trigger(con)
     pre_configure(con)
+    check_drain_rpl(con)
     neighbor_group_names, rpl_names, safi_names, as_number  = check_configured_rpl(con)
     neighbor_group_names_config, safi_v4_v6, safi_type = remove_rpl_configs(con, neighbor_group_names, rpl_names,safi_names,as_number)
     configure_drain_rpl(con,neighbor_group_names_config,as_number,safi_v4_v6,safi_type)
     post_configure(con)
     time.sleep(30)
     bgp_after_trigger(con)
-    
 
 if __name__ == '__main__':
     main()
