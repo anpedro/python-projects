@@ -1,6 +1,4 @@
-### still under development###
-
-
+from audioop import reverse
 from os import remove
 import time
 from netmiko import ConnectHandler
@@ -9,6 +7,7 @@ from paramiko import SSHClient
 import paramiko
 from scp import SCPClient
 import pysftp as sftp
+import re
 
 
 def show_sandbox_detail(con):
@@ -53,7 +52,7 @@ def show_sandbox_services(con):
 
 
 def ssh_to_sandbox(ip,username,password):
-    """'ssh cisco@2001:10:8:90::111 bash docker exec -it sandbox /bin/bash'       """    
+    """'ssh xxx@2001:10:8:90::111 bash docker exec -it sandbox /bin/bash'       """    
     try:
         #ask if there will be any case where the sandbox will be accessible via inband##
         command = "bash sandbox -c ls"
@@ -251,49 +250,54 @@ def verify_grpc(ip,username,password):
 
     except Exception as e:
         print(f'Exception is {e}')
-        print(f'gNMI capabilities NOT collected from sandbox successfully')
+        print(f'gNMI capabilities NOT collected from sandbox')
 
 
 def verify_namespaces_vrf(con,ip,username,password):
     '''verify namespaces/vrfs were replicated into the container'''
     try:
+        port = 22
+        ssh = SSHClient()
+        ssh.load_system_host_keys()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(ip, port, username, password)
 
         results = []
-        cli = ['show run vrf', 'bash sandbox -c ip netns']
-
-        for output in cli:
-            port = 22
-            ssh = SSHClient()
-            ssh.load_system_host_keys()
-            ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-            ssh.connect(ip, port, username, password)
+        results_1 = []
+        cli = ['show run formal vrf  | ex "address"']
+        cli_1 = ['bash sandbox -c ip netns']
+        for output in cli: ## how do I accomplish this with list compreehsion?
             stdin, stdout, stderr = ssh.exec_command(output)
             output = stdout.readlines()
             results.append(output)
-
-        for result in results:
-            print(result)
-            
-
-    
         
-#        print(results)
+        for output in cli_1:
+            stdin, stdout, stderr = ssh.exec_command(output)
+            output = stdout.readlines()
+            results_1.append(output)
 
+
+        for xrcli, bashcli in zip(results,results_1):
+            ''' going through the difference between what is configured in xr vs sandbox  '''
+            remove_date_xr_cli = (xrcli[3::])
+            remove_date_bashcli =(bashcli[3::])
+            result = [line.strip().replace(' ','-') for line in remove_date_xr_cli]
+            result_1 = [line.rstrip() for line in remove_date_bashcli]
+            trimming_xrcli = result[:-1]
+            trimming_bashcli = result_1[:-5]
+
+            if len(trimming_xrcli) == len(trimming_bashcli):
+                print(f'VRFs from XR replicated to namespaces in linux(sandbox) correctly, VRF names are:  \n {trimming_xrcli}')
 
     except Exception as e:
         print(f'Exception is {e}')
 
 
-
-
-
-
-
 def main():
     ##Gathering details of how to connect to router ##
     parser = argparse.ArgumentParser()
-    parser.add_argument("--username", '-u', type=str, default="cisco", help="Username. Default is cisco")
-    parser.add_argument("--password", '-p', type=str, default="lab123", help="Password. Default is lab123")
+    parser.add_argument("--username", '-u', type=str, default="xxx", help="Username. Default is xxx")
+    parser.add_argument("--password", '-p', type=str, default="xxx", help="Password. Default is xxx")
     parser.add_argument("--ip", '-i', type=str, help="IP of the host")
 
 
@@ -327,17 +331,17 @@ def main():
             break
         connection_attempts = connection_attempts + 1
 
- #   show_sandbox_detail(con)
- #   show_sandbox_info(con)
- #   show_sandbox_services(con)
- #   ssh_to_sandbox(ip,username,password)
- #   copy_file_sandbox(ip,username,password)
- #   verify_copied_file(ip,username,password)
- #   sandbox_restart(con)
- #   verify_tcpdump_sandbox(ip,username,password)
- #   verify_package_install_sandbox(ip,username,password)
- #   verify_iperf(ip,username,password)
- #   verify_grpc(ip,username,password)
+    show_sandbox_detail(con)
+    show_sandbox_info(con)
+    show_sandbox_services(con)
+    ssh_to_sandbox(ip,username,password)
+    copy_file_sandbox(ip,username,password)
+    verify_copied_file(ip,username,password)
+    sandbox_restart(con)
+    verify_tcpdump_sandbox(ip,username,password)
+    verify_package_install_sandbox(ip,username,password)
+    verify_iperf(ip,username,password)
+    verify_grpc(ip,username,password)
     verify_namespaces_vrf(con,ip,username,password)
     
 
