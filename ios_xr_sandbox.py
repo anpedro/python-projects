@@ -1,6 +1,7 @@
 from audioop import reverse
 from os import remove
 import time
+from traceback import print_tb
 from netmiko import ConnectHandler
 import argparse
 from paramiko import SSHClient
@@ -8,6 +9,8 @@ import paramiko
 from scp import SCPClient
 import pysftp as sftp
 import re
+import itertools
+
 
 
 def show_sandbox_detail(con):
@@ -26,7 +29,6 @@ def show_sandbox_detail(con):
 def show_sandbox_info(con):
     """Checking if show_sandbox_info is operational"""
     command = con.send_command(f"show sandbox info | inc \"state|Image\"").split()
-#    print(command)
     image = command[6]
     state = command[-1]
 
@@ -35,7 +37,6 @@ def show_sandbox_info(con):
         return True
     else:
         print(f'show sandbox info CLI is not working')
-
         return False
 
 def show_sandbox_services(con):
@@ -50,9 +51,8 @@ def show_sandbox_services(con):
 
     
 
-
 def ssh_to_sandbox(ip,username,password):
-    """'ssh xxx@2001:10:8:90::111 bash docker exec -it sandbox /bin/bash'       """    
+    """'ssh cisco@2001:10:8:90::111 bash docker exec -it sandbox /bin/bash'       """    
     try:
         #ask if there will be any case where the sandbox will be accessible via inband##
         command = "bash sandbox -c ls"
@@ -253,7 +253,7 @@ def verify_grpc(ip,username,password):
         print(f'gNMI capabilities NOT collected from sandbox')
 
 
-def verify_namespaces_vrf(con,ip,username,password):
+def verify_namespaces_vrf(ip,username,password):
     '''verify namespaces/vrfs were replicated into the container'''
     try:
         port = 22
@@ -266,6 +266,7 @@ def verify_namespaces_vrf(con,ip,username,password):
         results_1 = []
         cli = ['show run formal vrf  | ex "address"']
         cli_1 = ['bash sandbox -c ip netns']
+
         for output in cli: ## how do I accomplish this with list compreehsion?
             stdin, stdout, stderr = ssh.exec_command(output)
             output = stdout.readlines()
@@ -291,13 +292,52 @@ def verify_namespaces_vrf(con,ip,username,password):
 
     except Exception as e:
         print(f'Exception is {e}')
+        print(f'VRFs from XR replicated to namespaces in linux(sandbox) failed')
 
+
+def verify_int_replication(con,ip,username,password):
+    '''Verify if interfaces created in XR are replicated to sandbox'''        
+    #defining 3 empty lists for xr,vrf and vrf-default collection#
+    iosxr_interfaces = []
+    vrfs = []
+    vrf_default =  []
+    
+    xr_interfaces = con.send_command(f"show ipv6 vrf all interface  brief | utility egrep -E 'GigE|Mgm'").strip().split() ### Acquiring interfaces in XR (FourHun/Hun/Mgmt)
+    for xr_interface in xr_interfaces:
+        if 'GigE' in xr_interface and not '.' in xr_interface:
+            iosxr_interfaces.append(xr_interface)
+        elif 'Mg' in xr_interface:
+            iosxr_interfaces.append(xr_interface)
+
+
+    namespaces = con.send_command(f"bash sandbox -c ip netns").split() #gathering namespaces / vrfs in linux#
+    only_vrfs = namespaces[5::]
+    del only_vrfs[-4:]
+
+    for output in only_vrfs: # counting number of interfaces per vrf/namespace and add to the empty list##
+        cli = con.send_command(f"bash sandbox -c ip netns exec {output} ip link | grep -E 'FH|Mg'").split()
+        cli = [segment for segment in cli if segment.startswith('FH0_') or segment.startswith('Mg') or segment.startswith('Hu')]        
+        for segment in cli: 
+            vrfs.append(segment)
+    
+
+    cli_vrf_default = con.send_command(f"bash sandbox -c ip netns exec vrf-default ip link | grep -E 'FH|Hu|Mg'").split() ###counting number of interfaces in vrf-default and add to empty list##
+    output = [segment for segment in cli_vrf_default if segment.startswith('FH0_') or segment.startswith('Hu')]
+    for segment in output:
+        vrf_default.append(segment)
+    
+    if len(vrfs) + len(vrf_default) == len(iosxr_interfaces):
+        print(f'Interface replication from XR to sandbox worked')
+    else:
+        print(f'Interface replication failed')
+
+    
 
 def main():
     ##Gathering details of how to connect to router ##
     parser = argparse.ArgumentParser()
-    parser.add_argument("--username", '-u', type=str, default="xxx", help="Username. Default is xxx")
-    parser.add_argument("--password", '-p', type=str, default="xxx", help="Password. Default is xxx")
+    parser.add_argument("--username", '-u', type=str, default="cisco", help="Username. Default is cisco")
+    parser.add_argument("--password", '-p', type=str, default="lab123", help="Password. Default is lab123")
     parser.add_argument("--ip", '-i', type=str, help="IP of the host")
 
 
@@ -342,7 +382,8 @@ def main():
     verify_package_install_sandbox(ip,username,password)
     verify_iperf(ip,username,password)
     verify_grpc(ip,username,password)
-    verify_namespaces_vrf(con,ip,username,password)
+    verify_namespaces_vrf(ip,username,password)
+    verify_int_replication(con,ip,username,password)  
     
 
     
