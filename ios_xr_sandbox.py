@@ -1,4 +1,3 @@
-from audioop import reverse
 from os import remove
 import time
 from traceback import print_tb
@@ -11,6 +10,18 @@ import pysftp as sftp
 import re
 import itertools
 
+
+
+
+def check_sandbox_configured(con):
+    '''Checking if sandbox configuration is present, otherwise bail out'''
+    command = con.send_command(f"show run sandbox ").strip()
+    print(command)
+    if 'No such' in command:
+        print(f'Sandbox is not configured')
+        exit(1)
+    else:
+        pass
 
 
 def show_sandbox_detail(con):
@@ -370,7 +381,8 @@ def main():
         else:
             break
         connection_attempts = connection_attempts + 1
-
+    
+    check_sandbox_configured(con)
     show_sandbox_detail(con)
     show_sandbox_info(con)
     show_sandbox_services(con)
