@@ -1,7 +1,15 @@
 from datetime import datetime
+import os
 from netmiko import ConnectHandler
+import time
+from time import sleep, perf_counter
 from threading import Thread
+import os.path
+import hashlib
+import pysftp as sftp
+import subprocess
 import threading
+import traceback
 
 
 
@@ -19,8 +27,10 @@ def backup_config(host):
         time.sleep(0.5) 
         try:
             con = ConnectHandler(**device)
+            get_hostname = con.send_command_timing(f'bash hostname').splitlines()
+            print(f'Connected to {get_hostname[-1]}')
         except Exception as e:
-            print(f'Attempting to connect {connection_attempts}')
+            print(f'Attempting to connect to {connection_attempts}')
             
         else:
             break
@@ -33,11 +43,11 @@ def generate_backup_file(con):
        get_hostname_time.reverse()
        time_hostname = (f'{get_hostname_time[0]} {get_hostname_time[1]}')
        formatting = str(time_hostname).replace(' ','-').replace(':','-').replace('.','-')
-       copy = con.send_command_timing(f'copy running-config ftp://x:x@10.8.70.80/devbox/x/backup/{formatting}.cfg vrf management')
+       copy = con.send_command_timing(f'copy running-config ftp://lab:cisco123@10.8.70.80/home/lab/devbox/x/backup/{formatting}.cfg vrf management')
        copy = con.send_command_timing("\n")
        copy = con.send_command_timing("\n")
        print(copy)
-       print(f'File copied to x/home/lab/devbox/x/backup/ and filename is {formatting}.cfg')
+       print(f'File copied to x-devbox/home/lab/devbox/x/backup/ and filename is {formatting}.cfg')
 
 def main():
 
