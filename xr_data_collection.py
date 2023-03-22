@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 from netmiko import ConnectHandler
 import time
@@ -11,6 +11,10 @@ import subprocess
 import threading
 import traceback
 
+
+
+start_time = datetime.now()
+script_name = os.path.basename(__file__)
 
 def copy_files(host):
     device = {
@@ -35,7 +39,12 @@ def copy_files(host):
         copy_show_techs(con,host)
         copy_corefile(con,host)
         logging_file(con,host)
+        end_time = datetime.now()
+        delta_time = end_time - start_time
+        finished_in = f"-- Finished {script_name} in {delta_time.days} days, {delta_time.seconds // 3600} hours, {delta_time.seconds // 60 % 60} mins, {delta_time.seconds % 60} secs"
+        print(finished_in)
         break
+    
 
 
 
@@ -69,7 +78,6 @@ def copy_corefile(con,host):
         s = sftp.Connection(host=host, username='cisco', password='lab123', cnopts=cnopts)
         print(f'Copying {filename} to local directory')
         s.get(f'{filename}', preserve_mtime=True)
-
 
 def logging_file(con,host):
     """Function to collect latest show logging """
