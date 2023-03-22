@@ -101,7 +101,7 @@ def logging_file(con,host):
 
 def main():
 
-    list_of_hosts = ['10.8.90.98'] 
+    list_of_hosts = ['10.8.90.98'] ##add the host IPs required for the collection##
     
     thread_list = []
     for host in list_of_hosts:
