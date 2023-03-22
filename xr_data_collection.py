@@ -50,7 +50,7 @@ def copy_files(host):
 
 def copy_show_techs(con,host):
     """Function to collect any show techs from the box """
-    show_techs = [f'show tech qos pi', 'show tech qos platform']
+    show_techs = [f'show tech qos pi', 'show tech qos platform'] ##change to the list of show techs you want##
     for line in show_techs:
         print(f'Collecting {line}')
         output = con.send_command(f'{line}',read_timeout=600,expect_string=r"#").strip('\n')
@@ -65,7 +65,7 @@ def copy_show_techs(con,host):
 
 def copy_corefile(con,host):
     """Function to collect latest core file """
-    corefiles = [f'dumpcore running bgp']
+    corefiles = [f'dumpcore running bgp'] ##change to the list of coredumps you want##
     for line in corefiles:
         print(f'Dumping {line}')
         output = con.send_command(f'{line}',read_timeout=600,expect_string=r"#").strip('\n')
