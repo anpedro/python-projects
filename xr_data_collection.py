@@ -77,7 +77,7 @@ def logging_file(con,host):
     get_hostname_time.reverse()
     time_hostname = (f'{get_hostname_time[0]} {get_hostname_time[1]}')
     formatting = str(time_hostname).replace(' ','-').replace(':','-').replace('.','-')
-    sh_logging = f'show logging | file harddisk:show_logging_{formatting}'
+    sh_logging = f'show logging | file harddisk:show_logging_{formatting}.txt'
     print(f'Collecting {sh_logging}')
     output = con.send_command(f'{sh_logging}',read_timeout=600,expect_string=r"#").strip('\n')
     print(f'Collection {sh_logging} completed')
