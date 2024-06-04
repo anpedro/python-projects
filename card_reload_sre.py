@@ -1,51 +1,25 @@
 from netmiko import ConnectHandler
 import re
 import argparse
-from scp import SCPClient
-import paramiko
-import os
-import glob
-
-
-def clear_logging(ip,ip2,username,password):
-    
-    device = {
-        'device_type': 'cisco_xr',
-        'ip': ip,
-        'username': username,
-        'password': password,
-        'timeout': 5000,
-        }
-    
-    con = ConnectHandler(**device)
-    print(con.find_prompt())
-    hostname = con.find_prompt().split(':')[-1][:-1]
-    print(f'Connected to {hostname}, clearing logs') ##
-    clearing_logs = con.send_command_expect('clear logging', expect_string=r'\[confirm\]', read_timeout=120)
-    clearing_logs += con.send_command_expect('y\n', expect_string=r'#', read_timeout=120)
-    print(f'Logs cleared {hostname}')
-
+import threading
 
     
-    device = {
-        'device_type': 'cisco_xr',
-        'ip': ip2,
-        'username': username,
-        'password': password,
-        'timeout': 5000,
-        }
-    
-    con = ConnectHandler(**device)
-    print(con.find_prompt())
-    hostname = con.find_prompt().split(':')[-1][:-1]
-    print(f'Connected to {hostname}, clearing logs') ##
-    clearing_logs = con.send_command_expect('clear logging', expect_string=r'\[confirm\]', read_timeout=120)
-    clearing_logs += con.send_command_expect('y\n', expect_string=r'#', read_timeout=120)
-    print(f'Logs cleared {hostname}')
+def clear_logs_on_device(device):
+    try:
+        con = ConnectHandler(**device)
+        hostname = con.find_prompt().split(':')[-1][:-1]
+        print(f'Connected to {hostname}, clearing logs')
 
-    
-    
+        clearing_logs = con.send_command_expect('clear logging', expect_string=r'\[confirm\]', read_timeout=120)
+        clearing_logs += con.send_command_expect('y\n', expect_string=r'#', read_timeout=120)
+        print(f'Logs cleared on {hostname}')
+    except Exception as e:
+        print(f'Failed to clear logs on device {device["ip"]}: {e}')
+
+
+
 def collect_reload_data(ip,username,password,lc):
+    
     device = {
         'device_type': 'cisco_xr',
         'ip': ip,
@@ -53,8 +27,6 @@ def collect_reload_data(ip,username,password,lc):
         'password': password,
         'timeout': 5000,
         }
-    
-    
     con = ConnectHandler(**device)
     print(con.find_prompt())
     hostname = con.find_prompt().split(':')[-1][:-1]
@@ -62,14 +34,15 @@ def collect_reload_data(ip,username,password,lc):
     print(f'Executing card reload {hostname} LC {lc} connecting Leaf-2')
     card_reload = con.send_command(f'reload location {lc} noprompt' ,read_timeout=120)
     getting_timestamp = con.send_command(f'show logging | inc %PLATFORM-SHELFMGR-6-USER_OP',read_timeout=120) ##getting the card reload timestamp from the logs
-    timestamp_pattern = r'\b\w{3}\s\d{2}\s\d{2}:\d{2}:\d{2}\b'
+    #timestamp_pattern = r'\b\w{3}\s\d{2}\s\d{2}:\d{2}:\d{2}\b'
+    timestamp_pattern = r'\b[A-Za-z]{3} {1,2}\d{1,2} \d{2}:\d{2}:\d{2}\b'
+
     match_timestamp = re.search(timestamp_pattern, getting_timestamp)
-    if match_timestamp:    
+    if match_timestamp:
         timestamp_str = match_timestamp.group()
         print("Matched timestamp:", timestamp_str)
-        timestamp_str_dash = timestamp_str.replace(' ', '-').replace(':', '-')
-            
-        with open(f'output_logs-{timestamp_str_dash}.txt', 'w') as file:
+        timestamp_str_dash = timestamp_str.replace(' ', '-').replace(':', '-')    
+        with open(f'output_logs-sdk-{timestamp_str_dash}.txt', 'w') as file:
             collecting_shelf_mgr_logs = con.send_command(f'show shelfmgr history events detail location {lc}/CPU0 | b {timestamp_str}', read_timeout=120)
             file.write(collecting_shelf_mgr_logs + "Trigger Timestamp: " + "\n\n" + getting_timestamp + "\n\n" + card_reload + "\n\n")
             collecting_ifmgr_logs = con.send_command(f'show logging process ifmgr', read_timeout=120)
@@ -91,11 +64,7 @@ def collect_reload_data(ip,username,password,lc):
             collecting_rib_trace = con.send_command(f'show rib ipv6 trace usec | include {timestamp_str}', read_timeout=120)
             print(collecting_rib_trace)
             file.write("RIB Traces:\n")
-            file.write(collecting_rib_trace + "\n\n" + " Trigger Timestamp: "  + "\n\n" + getting_timestamp + "\n\n" + card_reload  + "\n\n")
-    else:
-        print("LC was not reloaded, please check LC status")
-
-
+            file.write(collecting_rib_trace + "\n\n" + " Trigger Timestamp: "  + "\n\n" + getting_timestamp + "\n\n" + card_reload  + "\n\n")        
 
 
 def collect_reload_data_leaf(ip2,username,password,lc):
@@ -108,25 +77,29 @@ def collect_reload_data_leaf(ip2,username,password,lc):
         'timeout': 5000,
         }
     
+    
     con = ConnectHandler(**device)
     print(con.find_prompt())
     hostname = con.find_prompt().split(':')[-1][:-1]
     print(f'Connected to {hostname}, collecting card_reload_data') ##
     getting_timestamp = con.send_command(f'show logging process ifmgr',read_timeout=120) 
     print(getting_timestamp)
-    timestamp_pattern = r'\b\w{3}\s\d{2}\s\d{2}:\d{2}:\d{2}\b'
+    #timestamp_pattern = r'\b\w{3}\s\d{2}\s\d{2}:\d{2}:\d{2}\b'
+    timestamp_pattern = r'\b[A-Za-z]{3} {1,2}\d{1,2} \d{2}:\d{2}:\d{2}\b'
     match_timestamp = re.search(timestamp_pattern, getting_timestamp)
     if match_timestamp:    
         timestamp_str = match_timestamp.group()
         print("Matched timestamp:", timestamp_str)
         timestamp_str_dash = timestamp_str.replace(' ', '-').replace(':', '-')
-            
-        with open(f'output_logs-{timestamp_str_dash}-leaf.txt', 'w') as file:
+        with open(f'output_logs-sdk-{timestamp_str_dash}-leaf.txt', 'w') as file:
             collecting_ifmgr_logs = con.send_command(f'show logging process ifmgr', read_timeout=120)
             print(collecting_ifmgr_logs)
             collecting_asic_errors = con.send_command(f'show asic-errors all detail location 0/rP0/CPU0 | b {timestamp_str}', read_timeout=120)
             print(collecting_asic_errors)
             file.write(collecting_ifmgr_logs + collecting_asic_errors + "Trigger Timestamp: " + "\n\n" + getting_timestamp + "\n\n")
+
+
+
 
 def main():
     #### Argparse block ####
@@ -138,10 +111,8 @@ def main():
     parser.add_argument("--lc", '-l', type=str, default="0/1", help="LC to be reloaded")
     parser.add_argument("--ip2", '-ip2', type=str, help="IP of the remote host")
     
-
     arguments = parser.parse_args()
-    #### End of Argparse block ####
-
+    
     # grabbing all variables from arguments
     username: str = arguments.username
     password: str = arguments.password
@@ -149,8 +120,33 @@ def main():
     lc: str = arguments.lc
     ip2: str = arguments.ip2
     
-    
-    clear_logging(ip,ip2,username,password)
+    devices = [
+    {
+        'device_type': 'cisco_xr',
+        'ip': ip,
+        'username': username,
+        'password': password,
+        'timeout': 5000,
+    },
+    {
+        'device_type': 'cisco_xr',
+        'ip': ip2,
+        'username': username,
+        'password': password,
+        'timeout': 5000,
+    }
+]
+
+    threads = []
+    for device in devices:
+        thread = threading.Thread(target=clear_logs_on_device, args=(device,))
+        threads.append(thread)
+        thread.start()
+    for thread in threads:      
+        thread.join()
+
+    print('All logs cleared on all devices.')
+
     collect_reload_data(ip,username,password,lc)
     collect_reload_data_leaf(ip2,username,password,lc)
     
