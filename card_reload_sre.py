@@ -150,7 +150,7 @@ def main():
     collect_reload_data(ip,username,password,lc)
     collect_reload_data_leaf(ip2,username,password,lc)
     
-
+    # usage = python card_reload_sre.py -i 2001:10:8:100::1 -ip2 2001:10:8:100::4 -u lab -p lab123 -l 0/1
 
 if __name__ == "__main__":
     main()
