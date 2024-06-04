@@ -9,7 +9,6 @@ def clear_logs_on_device(device):
         con = ConnectHandler(**device)
         hostname = con.find_prompt().split(':')[-1][:-1]
         print(f'Connected to {hostname}, clearing logs')
-
         clearing_logs = con.send_command_expect('clear logging', expect_string=r'\[confirm\]', read_timeout=120)
         clearing_logs += con.send_command_expect('y\n', expect_string=r'#', read_timeout=120)
         print(f'Logs cleared on {hostname}')
