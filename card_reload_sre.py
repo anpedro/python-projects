@@ -33,7 +33,6 @@ def collect_reload_data(ip,username,password,lc):
     print(f'Executing card reload {hostname} LC {lc} connecting Leaf-2')
     card_reload = con.send_command(f'reload location {lc} noprompt' ,read_timeout=120)
     getting_timestamp = con.send_command(f'show logging | inc %PLATFORM-SHELFMGR-6-USER_OP',read_timeout=120) ##getting the card reload timestamp from the logs
-    #timestamp_pattern = r'\b\w{3}\s\d{2}\s\d{2}:\d{2}:\d{2}\b'
     timestamp_pattern = r'\b[A-Za-z]{3} {1,2}\d{1,2} \d{2}:\d{2}:\d{2}\b'
 
     match_timestamp = re.search(timestamp_pattern, getting_timestamp)
@@ -83,7 +82,6 @@ def collect_reload_data_leaf(ip2,username,password,lc):
     print(f'Connected to {hostname}, collecting card_reload_data') ##
     getting_timestamp = con.send_command(f'show logging process ifmgr',read_timeout=120) 
     print(getting_timestamp)
-    #timestamp_pattern = r'\b\w{3}\s\d{2}\s\d{2}:\d{2}:\d{2}\b'
     timestamp_pattern = r'\b[A-Za-z]{3} {1,2}\d{1,2} \d{2}:\d{2}:\d{2}\b'
     match_timestamp = re.search(timestamp_pattern, getting_timestamp)
     if match_timestamp:    
