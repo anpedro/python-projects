@@ -1,0 +1,161 @@
+import tarfile
+import os
+import re
+import argparse
+from datetime import datetime
+import subprocess
+
+"""
+This script is meant for parsing output of show tech file ((show tech-support platform qos unsafe) or External file  which would dump sf_oq_debug along with other debugshells commands. Targeting oq_debug errors.
+Usage:
+
+show tech use-case:
+python3.9 parse_sf_oq_debug-sre.py -stp /home/lab/anpedro/scripts/playground/showtech-RH-8808-1A-qos-platform-2024-Aug-13.155153.UTC.tgz -ep /home/lab/anpedro/scripts/playground/ -of output.txt
+
+External files use-case:
+python3.9 /home/lab/anpedro/scripts/playground/parse_sf_oq_debug-sre.py -pf PHX10-0100-0100-02RHW.output PHX10-0100-0100-07RHW.output PHX10-0100-0100-04RHW.output PHX10-0100-0100-03RHW.output PHX10-0100-0100-01RHW.output PHX10-0100-0100-01RHE.output PHX10-0100-0100-08RHW.output PHX10-0100-0100-03RHE.output PHX10-0100-0100-02RHE.output PHX10-0100-0100-04RHE.output PHX10-0100-0100-06RHE.output PHX10-0100-0100-08RHE.output PHX10-0100-0100-07RHE.output PHX10-0100-0100-05RHE.output
+
+    parser.add_argument("--path", '-stp', type=str, default="No default path", help="Path to show tech")
+    parser.add_argument("--extract", '-ep', type=str, default="no default", help="directory to extract the files")
+    parser.add_argument("--pathfile", '-pf', type=str, nargs='+', default=None, help="Path to one or more external files")
+    parser.add_argument("--output_file", '-of', type=str, default="output.txt", help="Output file. Default is output.txt")
+"""
+def untar_file(path, extract):
+    if not os.path.isfile(path):
+        print(f"The file {path} does not exist.")
+    if not tarfile.is_tarfile(path):
+        print(f"The file {path} is not a valid tar file.")
+
+    if not os.path.exists(extract):
+        os.makedirs(extract)
+    try:
+        with tarfile.open(path, 'r:gz') as tar:
+            tar.extractall(path=extract)
+        print(f"Successfully extracted {path} to {extract}")
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
+def find_debugshell_files(extract, output_file):
+    # Get the current date in YYYY-MM-DD format
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    output_file = f"{output_file}_{current_date}.txt"
+    debugshell_files_found = False
+    find_command = f"find {extract} -type f -name '*debugshell*'"
+    result = subprocess.run(find_command, shell=True, check=True, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    if result.stdout:
+        debugshell_files_found = True
+        with open(output_file, 'w') as output:
+            for file in result.stdout.splitlines():
+                if file.endswith("CPU0"):
+                    print(f"Processing file: {file}")
+                    with open(file, 'r') as f:
+                        output.write(f"Contents of {file}:\n")
+                        output.write(f.read())
+                        output.write("\n\n")
+                    print(f"Contents of {file} written to {output_file}")
+                    
+        return output_file
+    
+    # If no files were found, return None or an appropriate value
+    if not debugshell_files_found:
+        print("No debugshell files found.")
+        return None
+
+def parsing_oq_debug(output_file):
+    try:
+        with open(output_file, 'r') as file:
+            # Initialize flags to track if any pattern matched
+            any_match_found = False
+                
+            lines = file.readlines()
+            # Define patterns
+            patterns = {
+                    "TXCGM_DROP_PATTERN": re.compile(r'.*Reject.*', re.MULTILINE | re.IGNORECASE),
+                    "TXCGM_raised_flow_pattern": re.compile(r'.*raised.*', re.MULTILINE | re.IGNORECASE),
+                    "TXCGM_drop_pattern": re.compile(r'.*drop.*', re.MULTILINE | re.IGNORECASE),
+                    "TXCGM_block_pattern": re.compile(r'.*Block.*', re.MULTILINE | re.IGNORECASE),
+                    "back_pressure_pattern": re.compile(r'.*back-pressure.*', re.MULTILINE | re.IGNORECASE)
+                }
+                
+            # Iterate over patterns and check matches
+            for line in lines:
+                for pattern_name, pattern in patterns.items():
+                    matches = pattern.findall(line)
+                if matches:
+                    any_match_found = True  
+                    print(f"{pattern_name} matched: {matches}")
+                    
+        if any_match_found == False:
+            print(f"no TXCGM Drops/Flow Control/Block/Back Pressure have occured")
+
+    except Exception as e:
+        print(f"An error in matches have  occurred: {e}")
+    
+def parsing_oq_debug_from_file(file_content):
+    try:
+        lines = file_content.splitlines()
+        
+        # Initialize flags to track if any pattern matched
+        any_match_found = False
+
+            # Define patterns
+            
+        patterns = {
+                "TXCGM_DROP_PATTERN": re.compile(r'.*Reject.*', re.MULTILINE | re.IGNORECASE),
+                "TXCGM_raised_flow_pattern": re.compile(r'.*raised.*', re.MULTILINE | re.IGNORECASE),
+                "TXCGM_drop_pattern": re.compile(r'.*drop.*', re.MULTILINE | re.IGNORECASE),
+                "TXCGM_block_pattern": re.compile(r'.*Block.*', re.MULTILINE | re.IGNORECASE),
+                "back_pressure_pattern": re.compile(r'.*back-pressure.*', re.MULTILINE | re.IGNORECASE)
+            }
+
+            # Iterate over patterns and check matches
+        for line in lines:
+            for pattern_name, pattern in patterns.items():
+                matches = pattern.findall(line)
+                if matches:
+                    any_match_found = True
+                    print(f"{pattern_name} matched: {matches}")                    
+        if any_match_found == False:
+            print(f"no TXCGM Drops/Flow Control/Block/BackPressure have occured")
+
+    except Exception as e:
+        print(f"An error occurred: {e}")
+
+
+
+def main():
+    
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--path", '-stp', type=str, default=None, help="Path to show tech file")
+    parser.add_argument("--pathfile", '-pf', type=str, nargs='+', default=None, help="Path to one or more external files")
+    parser.add_argument("--extract", '-ep', type=str, default=None, help="directory to extract the files")
+    parser.add_argument("--output_file", '-of', type=str, default="output.txt", help="Output file. Default is output.txt")
+    arguments = parser.parse_args()
+
+    path: str = arguments.path
+    extract: str = arguments.extract
+    pathfiles: list = arguments.pathfile
+    output_file: str = arguments.output_file
+    
+    
+    if path and extract and output_file:
+        print(f"Entering path/extract/outputfile")
+        untar_file(path, extract)
+        find_debugshell_files(extract, output_file)
+        parsing_oq_debug(output_file)
+    
+    if pathfiles:
+        print(f"Entering parse files function")
+        for pathfile in pathfiles:
+            try:
+                with open(pathfile, 'r') as file:
+                    print(f'Processing file: {pathfile}')
+                    file_content = file.read()
+                    parsing_oq_debug_from_file(file_content)
+            except Exception as e:
+                print(f"An error occurred while parsing the file: {e}")
+            
+
+if __name__ == "__main__":
+    main()
